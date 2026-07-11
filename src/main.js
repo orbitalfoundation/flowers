@@ -422,5 +422,22 @@ window.FLOWERS = {
   share: shareFlower,
   encode: () => encodeGenome(params, genomeBase),
   setWind(v) { ui.windStrength = v; wind.strength = v; refreshControllers(); },
+  setFlare(v) { ui.flare = v; refreshControllers(); },
+  /** Swing the camera round to look INTO the sun, with the bloom nudged off to one
+   *  side — otherwise the flower sits squarely in the line of sight and the flare's
+   *  own occlusion test (correctly) suppresses it, which looks exactly like a bug. */
+  aimAtSun() {
+    const { center, span: bloom } = flower.headFrame;
+    const d = camera.position.distanceTo(controls.target);
+    const right = new THREE.Vector3()
+      .crossVectors(sky.sun, new THREE.Vector3(0, 1, 0)).normalize();
+    if (right.lengthSq() < 0.5) right.set(1, 0, 0);
+    camera.position.copy(center)
+      .addScaledVector(sky.sun, -d)
+      .addScaledVector(right, bloom * 2.2);
+    controls.target.copy(camera.position).addScaledVector(sky.sun, d);
+    camera.lookAt(controls.target);
+    controls.update();
+  },
   rebuild: () => rebuild(true),
 };

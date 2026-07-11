@@ -98,8 +98,16 @@ export function buildLensFlare(renderer) {
      * @param occluders  meshes that should block the flare (the flowers)
      */
     render(mainCamera, sunDir, occluders, dt) {
-      // Put the sun far away along its direction, then project to screen space.
-      sunWorld.copy(sunDir).multiplyScalar(300).add(mainCamera.position);
+      // Put a proxy for the sun along its direction and project it to screen space.
+      //
+      // The distance must be INSIDE the far plane. It used to be a hard-coded 300,
+      // while camera.far is sized to the subject (a flower is a few tens of units at
+      // most) — so the proxy always landed beyond the far plane, ndc.z came back > 1,
+      // the on-screen test failed, and the flare never rendered once. It was dead
+      // code that looked fine. Anchoring it to the camera's own far plane makes it
+      // scale-independent.
+      const reach = mainCamera.far * 0.5;
+      sunWorld.copy(sunDir).multiplyScalar(reach).add(mainCamera.position);
       ndc.copy(sunWorld).project(mainCamera);
 
       const onScreen = ndc.z < 1 && Math.abs(ndc.x) < 1.35 && Math.abs(ndc.y) < 1.35;
@@ -114,7 +122,7 @@ export function buildLensFlare(renderer) {
         // the source is covered — leaving it visible through a bloom looks broken.
         if (target > 0 && occluders && occluders.length) {
           raycaster.set(mainCamera.position, sunDir);
-          raycaster.far = 100;
+          raycaster.far = reach;   // scale-relative, for the same reason as above
           if (raycaster.intersectObjects(occluders, true).length > 0) target = 0;
         }
       }
