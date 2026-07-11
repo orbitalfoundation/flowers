@@ -35,19 +35,27 @@ export const WIND_UNIFORMS = /* glsl */`
 `;
 
 /**
- * The bend, applied to `objPos` — the vertex in the PLANT's object space.
+ * The bend, applied to `windPos` — the vertex in WORLD space.
  *
- * It has to happen after instancing, not before. three's `begin_vertex` hands you
- * `transformed` in the *instance's own* local space, and a petal's local space is
- * rotated every which way by the corolla — pushing along the wind direction there
- * would shove each petal in a different direction and the flower would explode
- * rather than sway. So we take the vertex through `instanceMatrix` first, bend it in
- * the plant's frame where "up" really is up, and only then hand it to the view
- * matrix.
+ * World space is not a detail; it's the whole trick. The stem, the leaves and the
+ * petals are in different object spaces (a petal's frame is rotated every which way
+ * by the corolla, and the head's frame is rotated again to the stem's tip tangent),
+ * and the wind has to push all of them the same way, by an amount that depends on
+ * their height above the *ground*.
+ *
+ * Doing this in a mesh's own local space is how the head came adrift from the stem:
+ * three hands you `transformed` in the instance's local frame, where a petal's y is
+ * its own tiny local height, not its height up the plant. Since the bend scales with
+ * height², every petal computed a lever of ~zero and the bloom sat perfectly still
+ * while the stem swayed underneath it. Taking the vertex all the way out to world
+ * space makes the stem tip and the bloom that sits on it evaluate the *same function
+ * of the same height* — so they move together and stay attached, with no parenting
+ * tricks needed at all.
  */
 export const WIND_BEND = /* glsl */`
   {
-    float h = clamp(objPos.y / max(uPlantHeight, 1e-3), 0.0, 1.0);
+    // Height above the ground (the plant is rooted at y = 0).
+    float h = clamp(windPos.y / max(uPlantHeight, 1e-3), 0.0, 1.0);
     // A cantilever bends as roughly the square of the distance from its anchor: the
     // stem base barely moves, the bloom on top describes a big lazy arc.
     float lever = h * h;
@@ -62,13 +70,13 @@ export const WIND_BEND = /* glsl */`
 
     // Petal chatter: fast, small, keyed to the vertex's own position so neighbouring
     // petals don't move as one rigid sheet.
-    float chatter = sin(t * 6.1 + objPos.x * 34.0 + objPos.z * 27.0)
+    float chatter = sin(t * 6.1 + windPos.x * 34.0 + windPos.z * 27.0)
                   * uFlutter * uWindStrength * 0.015 * h;
 
-    objPos.xz += uWindDir * (bend * 0.16 * uPlantHeight * lever + chatter);
+    windPos.xz += uWindDir * (bend * 0.16 * uPlantHeight * lever + chatter);
     // Leaning over shortens the plant a little; without this the bloom visibly
     // stretches away from the top of its own stem at high wind.
-    objPos.y -= abs(bend) * 0.02 * uPlantHeight * lever;
+    windPos.y -= abs(bend) * 0.02 * uPlantHeight * lever;
   }
 `;
 
@@ -96,12 +104,18 @@ export function applyWind(material, shared, { isPetal = false } = {}) {
       .replace(
         '#include <project_vertex>',
         /* glsl */`
-        vec4 objPos = vec4(transformed, 1.0);
+        // Out to WORLD space — through the instance matrix AND the model matrix, so
+        // the stem, the leaves and every petal of every bloom all land in the same
+        // frame with a real height above the ground. Then bend, then straight to the
+        // view matrix. (modelViewMatrix would only get us to the mesh's own parent,
+        // which is where the head used to get left behind.)
+        vec4 windPos = vec4(transformed, 1.0);
         #ifdef USE_INSTANCING
-          objPos = instanceMatrix * objPos;
+          windPos = instanceMatrix * windPos;
         #endif
+        windPos = modelMatrix * windPos;
         ${WIND_BEND}
-        vec4 mvPosition = modelViewMatrix * objPos;
+        vec4 mvPosition = viewMatrix * windPos;
         gl_Position = projectionMatrix * mvPosition;
         `
       );
