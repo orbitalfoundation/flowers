@@ -45,9 +45,10 @@ const ground = new THREE.Mesh(
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
-let params = makeSpecies('sunflower');
-let genomeBase = { s: 'sunflower' };
-let currentSpecies = 'sunflower';
+const DEFAULT_ID = SPECIES_ORDER[Math.floor(Math.random() * SPECIES_ORDER.length)];
+let params = makeSpecies(DEFAULT_ID);
+let genomeBase = { s: DEFAULT_ID };
+let currentSpecies = DEFAULT_ID;
 let materials = makeMaterials(params, wind.shared);
 let flower = null;
 
